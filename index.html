@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NEON OBBY</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{overflow:hidden;background:#000;font-family:'Courier New',monospace;touch-action:none}
+canvas{display:block;width:100vw;height:100vh}
+#ui{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+
+#hud{position:absolute;top:16px;left:16px;display:flex;flex-direction:column;gap:6px}
+#lives{font-size:20px;color:#ff4488;text-shadow:0 0 8px #ff4488;letter-spacing:4px}
+#checkpoint-txt{font-size:13px;color:#888;letter-spacing:2px}
+
+#stage-bar{position:absolute;top:16px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,0.5);border:1px solid rgba(0,255,255,0.3);
+  padding:6px 20px;border-radius:20px;color:#0ff;font-size:14px;
+  letter-spacing:3px;text-shadow:0 0 8px #0ff;text-align:center;min-width:180px}
+
+#overlay{position:absolute;top:0;left:0;width:100%;height:100%;
+  display:flex;align-items:center;justify-content:center;flex-direction:column;
+  background:radial-gradient(ellipse at center,rgba(10,0,30,0.97) 0%,rgba(0,0,0,0.99) 100%);
+  pointer-events:all}
+.ov-title{font-size:clamp(36px,8vw,80px);letter-spacing:8px;margin-bottom:12px;
+  animation:pulse 2s ease-in-out infinite}
+.ov-sub{font-size:clamp(13px,3vw,20px);color:#888;letter-spacing:2px;margin-bottom:12px;text-align:center;padding:0 20px}
+.ov-tip{font-size:12px;color:#444;letter-spacing:1px;margin-bottom:40px;text-align:center;padding:0 20px}
+.play-btn{padding:14px 44px;font-size:18px;font-family:'Courier New',monospace;
+  background:transparent;border:1px solid currentColor;cursor:pointer;
+  text-transform:uppercase;letter-spacing:5px;transition:all .2s;
+  pointer-events:all}
+.play-btn:hover{background:currentColor;color:#000!important;box-shadow:0 0 30px currentColor}
+
+@keyframes pulse{0%,100%{text-shadow:0 0 20px currentColor,0 0 40px currentColor}
+  50%{text-shadow:0 0 5px currentColor}}
+
+#flash{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:0;transition:opacity .15s}
+
+#ctrl-hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
+  color:rgba(255,255,255,0.25);font-size:11px;text-align:center;letter-spacing:2px;white-space:nowrap}
+
+#dpad{position:absolute;bottom:24px;left:20px;display:none;flex-direction:column;align-items:center;gap:3px;pointer-events:all}
+.drow{display:flex;gap:3px}
+.dbtn{width:54px;height:54px;background:rgba(255,255,255,0.08);
+  border:1px solid rgba(255,255,255,0.25);border-radius:10px;
+  color:rgba(255,255,255,0.7);font-size:20px;display:flex;
+  align-items:center;justify-content:center;cursor:pointer;
+  user-select:none;-webkit-user-select:none}
+.dbtn:active{background:rgba(255,255,255,0.2)}
+#jbtn{position:absolute;bottom:24px;right:24px;width:76px;height:76px;
+  background:rgba(0,255,255,0.1);border:2px solid rgba(0,255,255,0.5);
+  border-radius:50%;color:#0ff;font-size:12px;letter-spacing:1px;
+  display:none;align-items:center;justify-content:center;
+  cursor:pointer;user-select:none;pointer-events:all}
+#jbtn:active{background:rgba(0,255,255,0.25)}
+
+#minimap{position:absolute;bottom:16px;right:16px;width:80px;height:160px;
+  background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.15);
+  border-radius:6px;overflow:hidden;display:none}
+#minimap canvas{width:80px;height:160px}
+
+@media(max-width:768px){
+  #dpad{display:flex}
+  #jbtn{display:flex}
+  #ctrl-hint{display:none}
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="hud">
+    <div id="lives">♥ ♥ ♥</div>
+    <div id="checkpoint-txt">START</div>
+  </div>
+  <div id="stage-bar">NEON OBBY</div>
+  <div id="overlay">
+    <div class="ov-title" style="color:#0ff">NEON OBBY</div>
+    <div class="ov-sub">8 stages of platforming madness.</div>
+    <div class="ov-tip">WASD / Arrows to move &nbsp;·&nbsp; SPACE to jump &nbsp;·&nbsp; Drag to rotate camera</div>
+    <button class="play-btn" id="startBtn" style="color:#0ff">START GAME</button>
+  </div>
+  <div id="flash"></div>
+  <div id="dpad">
+    <div class="drow"><div style="width:57px"></div><div class="dbtn" id="bu">▲</div></div>
+    <div class="drow"><div class="dbtn" id="bl">◀</div><div style="width:57px"></div><div class="dbtn" id="br">▶</div></div>
+    <div class="drow"><div style="width:57px"></div><div class="dbtn" id="bd">▼</div></div>
+  </div>
+  <div id="jbtn">JUMP</div>
+  <div id="ctrl-hint">WASD · SPACE to jump · Drag to orbit camera</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ─── RENDERER ───────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setClearColor(0x03000a);
+
+window.addEventListener('resize',()=>{
+  renderer.setSize(innerWidth,innerHeight);
+  cam.aspect = innerWidth/innerHeight;
+  cam.updateProjectionMatrix();
+});
+
+// ─── SCENE & CAMERA ─────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x03000a, 0.012);
+const cam = new THREE.PerspectiveCamera(65, innerWidth/innerHeight, 0.1, 300);
+
+// Stars
+const starsGeo = new THREE.BufferGeometry();
+const sp = new Float32Array(1500*3);
+for(let i=0;i<sp.length;i++) sp[i]=(Math.random()-.5)*400;
+starsGeo.setAttribute('position',new THREE.BufferAttribute(sp,3));
+scene.add(new THREE.Points(starsGeo,new THREE.PointsMaterial({color:0xffffff,size:.25})));
+
+// ─── LIGHTING ───────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x112244,1.5));
+const sun = new THREE.DirectionalLight(0xffffff,.6);
+sun.position.set(20,40,10);
+sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024);
+scene.add(sun);
+const pl1 = new THREE.PointLight(0x00ffff,3,25);
+const pl2 = new THREE.PointLight(0xff00ff,3,25);
+scene.add(pl1,pl2);
+
+// ─── MATERIALS ──────────────────────────────────────────────────────────────
+const M = (color,emissive,ei=0,r=.5,m=.3)=>
+  new THREE.MeshStandardMaterial({color,emissive:emissive??color,emissiveIntensity:ei,roughness:r,metalness:m});
+
+const MAT = {
+  start:  M(0x0d1a3d,0x00aaff,.15),
+  cyan:   M(0x061e2a,0x00ffff,.25),
+  pink:   M(0x2a0620,0xff00ff,.25),
+  green:  M(0x061a0c,0x00ff88,.25),
+  amber:  M(0x1a1000,0xffcc00,.3),
+  hazard: M(0x2a0000,0xff2200,.9,.8,0),
+  bounce: M(0x1a1a00,0xffff00,.8),
+  player: M(0x00ffff,0x00ffff,.6),
+  check:  M(0x003311,0x00ff88,1),
+  finish: M(0x1a003a,0xff00ff,1),
+};
+
+// ─── PLATFORM DATA ──────────────────────────────────────────────────────────
+const platforms=[];      // physics platforms
+const checkpoints=[];    // checkpoint triggers
+const hazardMeshes=[];   // spinning hazards for overlap test
+let   finishPlatform=null;
+
+function box(x,y,z,w,h,d,mat,opts={}){
+  const geo=new THREE.BoxGeometry(w,h,d);
+  const mesh=new THREE.Mesh(geo,(mat||MAT.cyan).clone());
+  mesh.position.set(x,y,z);
+  mesh.castShadow=mesh.receiveShadow=true;
+  scene.add(mesh);
+  const p={mesh,x,y,z,w,h,d,
+    bx:x,by:y,bz:z,
+    lx:x,ly:y,lz:z,
+    moveAxis:opts.moveAxis||null,
+    moveRange:opts.moveRange||3,
+    moveSpeed:opts.moveSpeed||2,
+    movePhase:opts.movePhase||0,
+    rotAxis:opts.rotAxis||null,
+    rotSpeed:opts.rotSpeed||0,
+    isHazard:!!opts.isHazard,
+    isBounce:!!opts.isBounce,
+    isFinish:!!opts.isFinish,
+  };
+  if(opts.isHazard) hazardMeshes.push(p);
+  if(opts.isFinish) finishPlatform=p;
+  platforms.push(p);
+  return p;
+}
+
+function checkpoint(x,y,z,id,label){
+  // Ring above
+  const rg=new THREE.TorusGeometry(1.6,.12,8,32);
+  const rm=new THREE.MeshStandardMaterial({color:0x00ff88,emissive:0x00ff88,emissiveIntensity:1.5});
+  const ring=new THREE.Mesh(rg,rm);
+  ring.rotation.x=Math.PI/2;
+  ring.position.set(x,y+2.2,z);
+  scene.add(ring);
+  const rl=new THREE.PointLight(0x00ff88,2,10);
+  rl.position.copy(ring.position);
+  scene.add(rl);
+  checkpoints.push({x,y,z,id,label,ring,rl,active:false});
+}
+
+// ─── LEVEL BUILD ────────────────────────────────────────────────────────────
+function buildLevel(){
+
+  // STAGE 1 — Start area + basic jumps
+  box(0,0,0,10,1,10,MAT.start);
+  checkpoint(0,0,0,0,'START');
+
+  box(0,1,-8,3,1,3,MAT.cyan);
+  box(3,1.5,-13,3,1,3,MAT.cyan);
+  box(0,2,-18,3,1,3,MAT.cyan);
+  box(-3,2.5,-23,3,1,3,MAT.pink);
+  box(0,3,-28,4,1,4,MAT.pink);
+  checkpoint(0,3,-28,1,'STAGE 1 COMPLETE');
+
+  // STAGE 2 — Wider gaps + height
+  box(0,3.5,-34,3,1,3,MAT.cyan);
+  box(4,4.5,-39,3,1,3,MAT.cyan);
+  box(0,5.5,-44,3,1,3,MAT.cyan);
+  box(-4,6.5,-49,3,1,3,MAT.cyan);
+  box(0,7,-54,5,1,5,MAT.green);
+  checkpoint(0,7,-54,2,'STAGE 2 COMPLETE');
+
+  // STAGE 3 — Moving platforms (left-right)
+  box(0,7.5,-60,3,1,3,MAT.cyan,{moveAxis:'x',moveRange:5,moveSpeed:2,movePhase:0});
+  box(0,8,-66,3,1,3,MAT.cyan,{moveAxis:'x',moveRange:5,moveSpeed:2.2,movePhase:Math.PI});
+  box(0,8.5,-72,3,1,3,MAT.cyan,{moveAxis:'x',moveRange:4,moveSpeed:1.8,movePhase:1});
+  box(0,9,-78,3,1,3,MAT.pink,{moveAxis:'x',moveRange:6,moveSpeed:2.5,movePhase:2});
+  box(0,9,-84,5,1,5,MAT.amber);
+  checkpoint(0,9,-84,3,'STAGE 3 COMPLETE');
+
+  // STAGE 4 — Moving platforms (up-down)
+  box(0,10,-90,3,1,3,MAT.cyan,{moveAxis:'y',moveRange:2.5,moveSpeed:1.5,movePhase:0});
+  box(4,10,-96,3,1,3,MAT.cyan,{moveAxis:'y',moveRange:2,moveSpeed:2,movePhase:Math.PI/2});
+  box(-4,11,-102,3,1,3,MAT.pink,{moveAxis:'y',moveRange:3,moveSpeed:1.8,movePhase:Math.PI});
+  box(0,12,-108,3,1,3,MAT.cyan,{moveAxis:'y',moveRange:2,moveSpeed:2.2,movePhase:1.5});
+  box(0,12,-114,5,1,5,MAT.green);
+  checkpoint(0,12,-114,4,'STAGE 4 COMPLETE');
+
+  // STAGE 5 — Narrow bridges with hazards
+  box(0,12,-120,1,1,12,MAT.cyan);
+  box(0,14,-133,1,1,12,MAT.pink);
+  // Spinning blades on bridges
+  box(0,14.5,-127,9,.35,.35,MAT.hazard,{isHazard:true,rotAxis:'y',rotSpeed:2.5});
+  box(0,14,-140,5,1,5,MAT.amber);
+  checkpoint(0,14,-140,5,'STAGE 5 COMPLETE');
+
+  // STAGE 6 — Spinning hazard gauntlet
+  box(0,14,-146,7,1,12,MAT.cyan);
+  box(0,16.2,-149,10,.35,.35,MAT.hazard,{isHazard:true,rotAxis:'y',rotSpeed:3});
+  box(0,15.7,-153,10,.35,.35,MAT.hazard,{isHazard:true,rotAxis:'y',rotSpeed:-2.5});
+  box(0,14,-158,3,1,3,MAT.cyan);
+  box(-4,15,-163,3,1,3,MAT.cyan);
+  box(0,16,-168,3,1,3,MAT.pink);
+  box(4,17,-173,3,1,3,MAT.cyan);
+  box(0,18,-178,5,1,5,MAT.green);
+  checkpoint(0,18,-178,6,'STAGE 6 COMPLETE');
+
+  // STAGE 7 — Bounce pads + big gaps
+  box(0,18.5,-184,2.5,0.6,2.5,MAT.bounce,{isBounce:true});
+  box(5,22,-189,3,1,3,MAT.cyan);
+  box(5,22.5,-189,2.5,0.6,2.5,MAT.bounce,{isBounce:true});
+  box(-1,26,-194,3,1,3,MAT.pink);
+  box(-1,26.5,-194,2.5,0.6,2.5,MAT.bounce,{isBounce:true});
+  box(4,31,-199,5,1,5,MAT.amber);
+  checkpoint(4,31,-199,7,'STAGE 7 COMPLETE');
+
+  // STAGE 8 — Final chaos: moving + spinning
+  box(4,32,-206,3,1,3,MAT.cyan,{moveAxis:'x',moveRange:5,moveSpeed:3,movePhase:0});
+  box(4,33,-213,3,1,3,MAT.pink,{moveAxis:'z',moveRange:3,moveSpeed:2.5,movePhase:1});
+  box(4,34,-220,3,1,3,MAT.cyan,{moveAxis:'x',moveRange:6,moveSpeed:3.5,movePhase:2});
+  // Big final platform with spinning hazards
+  box(4,35,-228,9,1,9,MAT.green);
+  box(4,37.2,-228,12,.35,.35,MAT.hazard,{isHazard:true,rotAxis:'y',rotSpeed:4});
+  box(4,36.7,-228,.35,.35,12,MAT.hazard,{isHazard:true,rotAxis:'y',rotSpeed:-3.5});
+
+  // STAGE 8 COMPLETE — escape the gauntlet, reach the rest pad
+  box(4,36,-235,3,1,3,MAT.pink);
+  box(0,38,-240,3,1,3,MAT.cyan);
+  box(-3,40,-245,3,1,3,MAT.amber);
+  box(0,42,-250,3,1,3,MAT.pink);
+  box(0,44,-256,6,1,6,MAT.green);
+  checkpoint(0,44,-256,8,'STAGE 8 COMPLETE');
+
+  // STAGE 9 — Z-Axis Swerve (platforms moving forward/back)
+  box(0,45,-262,3,1,3,MAT.cyan,{moveAxis:'z',moveRange:4,moveSpeed:2,movePhase:0});
+  box(0,46,-268,3,1,3,MAT.cyan,{moveAxis:'z',moveRange:4,moveSpeed:2.3,movePhase:Math.PI});
+  box(3,47,-274,3,1,3,MAT.pink,{moveAxis:'z',moveRange:3,moveSpeed:2.5,movePhase:0.5});
+  box(0,48,-280,3,1,3,MAT.cyan,{moveAxis:'z',moveRange:4,moveSpeed:3,movePhase:1.5});
+  box(-2,49,-286,3,1,3,MAT.pink,{moveAxis:'x',moveRange:4,moveSpeed:2.5,movePhase:2});
+  box(0,50,-292,5,1,5,MAT.amber);
+  checkpoint(0,50,-292,9,'STAGE 9 COMPLETE');
+
+  // STAGE 10 — Tiny Fast Platforms + overhead blade
+  box(0,51,-298,2,0.7,2,MAT.cyan,{moveAxis:'x',moveRange:5,moveSpeed:3.5,movePhase:0});
+  box(0,52,-304,2,0.7,2,MAT.pink,{moveAxis:'x',moveRange:5,moveSpeed:3.8,movePhase:Math.PI});
+  box(0,53.5,-301,11,.28,.28,MAT.hazard,{isHazard:true,rotAxis:'y',rotSpeed:3.5});
+  box(0,53,-310,2,0.7,2,MAT.cyan,{moveAxis:'z',moveRange:3,moveSpeed:4,movePhase:0.7});
+  box(0,54,-316,2,0.7,2,MAT.amber,{moveAxis:'x',moveRange:5,moveSpeed:4.2,movePhase:1.2});
+  box(0,55,-322,5,1,5,MAT.green);
+  checkpoint(0,55,-322,10,'STAGE 10 COMPLETE');
+
+  // STAGE 11 — Triple-Blade Corridor
+  box(0,55,-329,6,1,14,MAT.cyan);
+  box(0,57.3,-332,11,.28,.28,MAT.hazard,{isHazard:true,rotAxis:'y',rotSpeed:3.5});
+  box(0,56.8,-337,11,.28,.28,MAT.hazard,{isHazard:true,rotAxis:'y',rotSpeed:-3.2});
+  box(0,57.3,-342,11,.28,.28,MAT.hazard,{isHazard:true,rotAxis:'y',rotSpeed:4.2});
+  box(0,55,-349,3,1,3,MAT.pink);
+  box(-3,56,-354,3,1,3,MAT.cyan);
+  box(0,57,-360,5,1,5,MAT.amber);
+  checkpoint(0,57,-360,11,'STAGE 11 COMPLETE');
+
+  // STAGE 12 — Micro-Platform Sprint (1.5×1.5 tiles)
+  {const xs=[1,-1,2,-2,1,-2,2,-1,0];
+   const zs=[-366,-371,-376,-381,-386,-391,-396,-401,-406];
+   xs.forEach((x,i)=>box(x,58+i*0.5,zs[i],1.5,0.6,1.5,i%2===0?MAT.cyan:MAT.pink));}
+  box(0,62.5,-411,5,1,5,MAT.green);
+  checkpoint(0,62.5,-411,12,'STAGE 12 COMPLETE');
+
+  // STAGE 13 — Spiral Tower (rising helix of 10 platforms)
+  for(let i=0;i<10;i++){
+    const a=(i/10)*Math.PI*2;
+    const hx=Math.cos(a)*3.5, hz=Math.sin(a)*1.2;
+    box(hx,63.5+i*1.8,-417-i*3+hz,3,0.7,3,i%2===0?MAT.cyan:MAT.pink);
+  }
+  // Bridge off the spiral to rest
+  box(3,82,-447,2.5,0.7,2.5,MAT.amber);
+  box(1,83,-452,6,1,6,MAT.green);
+  checkpoint(1,83,-452,13,'STAGE 13 COMPLETE');
+
+  // STAGE 14 — Moving Platforms + Blade Patrols
+  box(1,84,-458,3,1,3,MAT.cyan,{moveAxis:'x',moveRange:5,moveSpeed:3.5,movePhase:0});
+  box(1,85,-464,3,1,3,MAT.pink,{moveAxis:'z',moveRange:3,moveSpeed:3,movePhase:1});
+  box(1,86.5,-461,12,.28,.28,MAT.hazard,{isHazard:true,rotAxis:'y',rotSpeed:4.5});
+  box(1,86,-470,3,1,3,MAT.cyan,{moveAxis:'x',moveRange:6,moveSpeed:4,movePhase:2});
+  box(1,87,-476,3,1,3,MAT.amber,{moveAxis:'z',moveRange:3,moveSpeed:3.5,movePhase:0.5});
+  box(0,88,-482,5,1,5,MAT.green);
+  checkpoint(0,88,-482,14,'STAGE 14 COMPLETE');
+
+  // STAGE 15 — Bounce Chain to the Heavens
+  box(0,88.5,-488,2.5,0.6,2.5,MAT.bounce,{isBounce:true});
+  box(5,93,-493,3,1,3,MAT.pink);
+  box(5,93.5,-493,2.5,0.6,2.5,MAT.bounce,{isBounce:true});
+  box(-2,99,-498,3,1,3,MAT.cyan);
+  box(-2,99.5,-498,2.5,0.6,2.5,MAT.bounce,{isBounce:true});
+  box(4,106,-503,3,1,3,MAT.amber);
+  box(4,106.5,-503,2.5,0.6,2.5,MAT.bounce,{isBounce:true});
+  box(0,114,-508,5,1,5,MAT.green);
+  checkpoint(0,114,-508,15,'STAGE 15 COMPLETE');
+
+  // STAGE 16 — GRAND FINALE: Every mechanic at once
+  box(0,115,-515,2.5,1,2.5,MAT.cyan,{moveAxis:'x',moveRange:5,moveSpeed:4.2,movePhase:0});
+  box(0,116,-521,2.5,1,2.5,MAT.pink,{moveAxis:'z',moveRange:4,moveSpeed:4.5,movePhase:Math.PI});
+  // Cross-blade gauntlet arena
+  box(0,117,-529,10,1,10,MAT.amber);
+  box(0,119.3,-529,14,.28,.28,MAT.hazard,{isHazard:true,rotAxis:'y',rotSpeed:5.5});
+  box(0,118.8,-529,.28,.28,14,MAT.hazard,{isHazard:true,rotAxis:'y',rotSpeed:-5});
+  // Bounce escape
+  box(0,118,-537,2.5,0.6,2.5,MAT.bounce,{isBounce:true});
+  box(0,125,-542,3,1,3,MAT.pink);
+  // Precision finale hops
+  box(3,127,-547,2,0.6,2,MAT.cyan);
+  box(-3,129,-552,2,0.6,2,MAT.pink);
+  box(0,131,-557,2,0.6,2,MAT.cyan);
+  checkpoint(0,131,-557,16,'ALMOST THERE!');
+  box(3,133,-562,3,1,3,MAT.amber);
+  box(-2,135,-567,3,1,3,MAT.pink);
+
+  // THE GRAND FINISH — 16 stages conquered
+  box(0,137,-574,18,1,18,MAT.finish,{isFinish:true});
+  // Four glowing corner pillars
+  for(const[dx,dz]of[[-7,-7],[7,-7],[-7,7],[7,7]]){
+    const pg=new THREE.BoxGeometry(.6,12,.6);
+    const pm=new THREE.Mesh(pg,new THREE.MeshStandardMaterial({color:0xff00ff,emissive:0xff00ff,emissiveIntensity:1}));
+    pm.position.set(dx,143,-574+dz);
+    scene.add(pm);
+    const pfl=new THREE.PointLight(0xff00ff,4,16);
+    pfl.position.set(dx,150,-574+dz);
+    scene.add(pfl);
+  }
+  // Centrepiece tower of light
+  const ctg=new THREE.BoxGeometry(.4,20,.4);
+  const ctm=new THREE.Mesh(ctg,new THREE.MeshStandardMaterial({color:0xffff00,emissive:0xffff00,emissiveIntensity:1}));
+  ctm.position.set(0,147.5,-574);
+  scene.add(ctm);
+  const ctl=new THREE.PointLight(0xffff00,5,20);
+  ctl.position.set(0,158,-574);
+  scene.add(ctl);
+}
+
+buildLevel();
+
+// ─── PLAYER ─────────────────────────────────────────────────────────────────
+const playerGeo = new THREE.BoxGeometry(.75,.75,.75);
+const playerMesh = new THREE.Mesh(playerGeo, MAT.player.clone());
+playerMesh.castShadow=true;
+scene.add(playerMesh);
+const playerLight = new THREE.PointLight(0x00ffff,1.5,4);
+playerMesh.add(playerLight);
+
+const PL = {
+  pos:{x:0,y:2,z:0},
+  vel:{x:0,y:0,z:0},
+  size:{x:.75,y:.75,z:.75},
+  onGround:false,
+  jumpPressed:false,
+  invincible:0,
+  currentPlatform:null,
+};
+
+const GRAVITY=-22;
+const JUMP_FORCE=10;
+const MOVE_SPEED=6.5;
+const BOUNCE_FORCE=18;
+
+// ─── INPUT ───────────────────────────────────────────────────────────────────
+const K={w:false,a:false,s:false,d:false,space:false};
+const touchMap={bu:'w',bd:'s',bl:'a',br:'d',jbtn:'space'};
+Object.keys(touchMap).forEach(id=>{
+  const el=document.getElementById(id);
+  const key=touchMap[id];
+  el.addEventListener('touchstart',e=>{e.preventDefault();K[key]=true},{passive:false});
+  el.addEventListener('touchend',e=>{e.preventDefault();K[key]=false},{passive:false});
+  el.addEventListener('mousedown',()=>K[key]=true);
+  el.addEventListener('mouseup',()=>K[key]=false);
+});
+document.addEventListener('keydown',e=>{
+  if(e.code==='KeyW'||e.code==='ArrowUp')K.w=true;
+  if(e.code==='KeyS'||e.code==='ArrowDown')K.s=true;
+  if(e.code==='KeyA'||e.code==='ArrowLeft')K.a=true;
+  if(e.code==='KeyD'||e.code==='ArrowRight')K.d=true;
+  if(e.code==='Space'){K.space=true;e.preventDefault();}
+});
+document.addEventListener('keyup',e=>{
+  if(e.code==='KeyW'||e.code==='ArrowUp')K.w=false;
+  if(e.code==='KeyS'||e.code==='ArrowDown')K.s=false;
+  if(e.code==='KeyA'||e.code==='ArrowLeft')K.a=false;
+  if(e.code==='KeyD'||e.code==='ArrowRight')K.d=false;
+  if(e.code==='Space')K.space=false;
+});
+
+// ─── CAMERA ORBIT ────────────────────────────────────────────────────────────
+let camYaw=0, camPitch=.45, camDist=13;
+let mouseDown=false, lastMX=0, lastMY=0;
+canvas.addEventListener('mousedown',e=>{mouseDown=true;lastMX=e.clientX;lastMY=e.clientY});
+window.addEventListener('mouseup',()=>mouseDown=false);
+window.addEventListener('mousemove',e=>{
+  if(!mouseDown)return;
+  camYaw -= (e.clientX-lastMX)*.005;
+  camPitch=Math.max(.12,Math.min(.9,camPitch+(e.clientY-lastMY)*.005));
+  lastMX=e.clientX;lastMY=e.clientY;
+});
+let touchCam=false,lastTX=0,lastTY=0;
+canvas.addEventListener('touchstart',e=>{
+  const el=document.getElementById('dpad');
+  if(e.target===el||el.contains(e.target))return;
+  if(e.target.id==='jbtn')return;
+  touchCam=true;lastTX=e.touches[0].clientX;lastTY=e.touches[0].clientY;
+},{passive:true});
+canvas.addEventListener('touchmove',e=>{
+  if(!touchCam||e.touches.length!==1)return;
+  camYaw-=(e.touches[0].clientX-lastTX)*.006;
+  camPitch=Math.max(.12,Math.min(.9,camPitch+(e.touches[0].clientY-lastTY)*.006));
+  lastTX=e.touches[0].clientX;lastTY=e.touches[0].clientY;
+},{passive:true});
+canvas.addEventListener('touchend',()=>touchCam=false,{passive:true});
+
+// ─── GAME STATE ──────────────────────────────────────────────────────────────
+const GS={
+  status:'menu',
+  lives:3,
+  checkpointIdx:0,
+  spawnPos:{x:0,y:2,z:0},
+};
+
+function updateHUD(){
+  document.getElementById('lives').textContent='♥ '.repeat(Math.max(0,GS.lives)).trim()||'☠';
+}
+
+function setCheckpointTxt(txt){
+  document.getElementById('checkpoint-txt').textContent=txt;
+}
+
+function setStageBar(txt){
+  document.getElementById('stage-bar').textContent=txt;
+}
+
+function flashScreen(color,duration=300){
+  const f=document.getElementById('flash');
+  f.style.background=color;
+  f.style.opacity='1';
+  setTimeout(()=>f.style.opacity='0',duration);
+}
+
+// ─── PHYSICS ─────────────────────────────────────────────────────────────────
+function getPlayerAABB(){
+  const{x,y,z}=PL.pos;const{x:sx,y:sy,z:sz}=PL.size;
+  return{minX:x-sx/2,maxX:x+sx/2,minY:y-sy/2,maxY:y+sy/2,minZ:z-sz/2,maxZ:z+sz/2};
+}
+
+function getPlatAABB(p){
+  const mx=p.mesh.position.x,my=p.mesh.position.y,mz=p.mesh.position.z;
+  return{minX:mx-p.w/2,maxX:mx+p.w/2,minY:my-p.h/2,maxY:my+p.h/2,minZ:mz-p.d/2,maxZ:mz+p.d/2};
+}
+
+function overlaps(a,b){
+  return a.maxX>b.minX&&a.minX<b.maxX&&a.maxY>b.minY&&a.minY<b.maxY&&a.maxZ>b.minZ&&a.minZ<b.maxZ;
+}
+
+function overlap1D(aMin,aMax,bMin,bMax){return Math.min(aMax-bMin,bMax-aMin);}
+
+function physicsUpdate(dt){
+  if(GS.status!=='playing')return;
+
+  // Platform moving - apply velocity to player if grounded on it
+  const cp=PL.currentPlatform;
+  if(cp){
+    PL.pos.x+=cp.mesh.position.x-cp.lx;
+    PL.pos.z+=cp.mesh.position.z-cp.lz;
+  }
+
+  // Camera-relative movement
+  const cy=Math.atan2(cam.position.x-PL.pos.x,cam.position.z-PL.pos.z);
+  let mx=0,mz=0;
+  if(K.w){mx-=Math.sin(cy);mz-=Math.cos(cy);}
+  if(K.s){mx+=Math.sin(cy);mz+=Math.cos(cy);}
+  if(K.a){mx-=Math.cos(cy);mz+=Math.sin(cy);}
+  if(K.d){mx+=Math.cos(cy);mz-=Math.sin(cy);}
+  const ml=Math.sqrt(mx*mx+mz*mz);
+  if(ml>0){PL.vel.x=(mx/ml)*MOVE_SPEED;PL.vel.z=(mz/ml)*MOVE_SPEED;}
+  else{PL.vel.x*=.7;PL.vel.z*=.7;}
+
+  // Jump
+  if(K.space&&PL.onGround&&!PL.jumpPressed){
+    PL.vel.y=JUMP_FORCE;PL.onGround=false;PL.jumpPressed=true;
+  }
+  if(!K.space)PL.jumpPressed=false;
+
+  // Gravity
+  PL.vel.y+=GRAVITY*dt;
+
+  // Move X — resolve X
+  PL.pos.x+=PL.vel.x*dt;
+  {const pa=getPlayerAABB();
+  for(const p of platforms){
+    if(p.isHazard||p.isFinish)continue;
+    const pb=getPlatAABB(p);
+    if(!overlaps(pa,pb))continue;
+    const ox=overlap1D(pa.minX,pa.maxX,pb.minX,pb.maxX);
+    if(pa.minX<pb.minX+p.w/2)PL.pos.x-=ox; else PL.pos.x+=ox;
+    PL.vel.x=0;
+  }}
+
+  // Move Y — resolve Y
+  const prevY=PL.pos.y;
+  PL.pos.y+=PL.vel.y*dt;
+  PL.onGround=false;
+  PL.currentPlatform=null;
+  {const pa=getPlayerAABB();
+  for(const p of platforms){
+    if(p.isHazard||p.isFinish)continue;
+    const pb=getPlatAABB(p);
+    if(!overlaps(pa,pb))continue;
+    const oy=overlap1D(pa.minY,pa.maxY,pb.minY,pb.maxY);
+    if(prevY-PL.size.y/2>=pb.maxY-0.05&&PL.vel.y<=0){
+      // land on top
+      PL.pos.y+=oy;
+      if(p.isBounce){
+        PL.vel.y=BOUNCE_FORCE;
+        flashScreen('rgba(255,255,0,0.2)',200);
+      } else {
+        PL.vel.y=0;PL.onGround=true;PL.currentPlatform=p;
+      }
+    } else {
+      // hit from below
+      PL.pos.y-=oy;PL.vel.y=-Math.abs(PL.vel.y)*.2;
+    }
+  }}
+
+  // Move Z — resolve Z
+  PL.pos.z+=PL.vel.z*dt;
+  {const pa=getPlayerAABB();
+  for(const p of platforms){
+    if(p.isHazard||p.isFinish)continue;
+    const pb=getPlatAABB(p);
+    if(!overlaps(pa,pb))continue;
+    const oz=overlap1D(pa.minZ,pa.maxZ,pb.minZ,pb.maxZ);
+    if(pa.minZ<pb.minZ+p.d/2)PL.pos.z-=oz; else PL.pos.z+=oz;
+    PL.vel.z=0;
+  }}
+
+  // Hazard collision (spinning blades)
+  if(PL.invincible<=0){
+    const pa=getPlayerAABB();
+    for(const p of hazardMeshes){
+      if(overlaps(pa,getPlatAABB(p))){die();break;}
+    }
+  }
+
+  // Finish check
+  if(finishPlatform){
+    const pa=getPlayerAABB(),pb=getPlatAABB(finishPlatform);
+    if(overlaps(pa,pb)&&PL.pos.y>pb.maxY-0.2)triggerWin();
+  }
+
+  // Checkpoint trigger
+  for(const cp of checkpoints){
+    if(cp.id<=GS.checkpointIdx)continue;
+    const dx=PL.pos.x-cp.x,dz=PL.pos.z-cp.z,dy=PL.pos.y-cp.y;
+    if(Math.abs(dx)<4&&Math.abs(dz)<4&&dy>-1&&dy<5){
+      GS.checkpointIdx=cp.id;
+      GS.spawnPos={x:cp.x,y:cp.y+1.5,z:cp.z};
+      cp.active=true;
+      cp.ring.material.emissive.set(0xffff00);
+      cp.ring.material.color.set(0xffff00);
+      cp.rl.color.set(0xffff00);
+      setCheckpointTxt(cp.label);
+      setStageBar(cp.label);
+      flashScreen('rgba(0,255,136,0.2)',400);
+    }
+  }
+
+  // Fall death
+  if(PL.pos.y<GS.spawnPos.y-20||PL.pos.y<-20)die();
+
+  // Invincibility blink
+  if(PL.invincible>0){
+    PL.invincible-=dt;
+    playerMesh.visible=Math.floor(PL.invincible*10)%2===0;
+  } else playerMesh.visible=true;
+
+  // Update mesh
+  playerMesh.position.set(PL.pos.x,PL.pos.y,PL.pos.z);
+  playerMesh.rotation.y+=dt*3;
+}
+
+let dying=false;
+function die(){
+  if(dying||PL.invincible>0)return;
+  dying=true;GS.lives--;updateHUD();
+  flashScreen('rgba(255,0,68,0.45)',400);
+  if(GS.lives<=0){showGameOver();dying=false;return;}
+  respawn();
+  setTimeout(()=>dying=false,400);
+}
+
+function respawn(){
+  PL.pos={x:GS.spawnPos.x,y:GS.spawnPos.y,z:GS.spawnPos.z};
+  PL.vel={x:0,y:0,z:0};
+  PL.onGround=false;PL.currentPlatform=null;
+  PL.invincible=2.5;
+}
+
+// ─── CAMERA UPDATE ────────────────────────────────────────────────────────────
+function camUpdate(){
+  const tx=PL.pos.x+camDist*Math.sin(camYaw)*Math.cos(camPitch);
+  const ty=PL.pos.y+camDist*Math.sin(camPitch)+2;
+  const tz=PL.pos.z+camDist*Math.cos(camYaw)*Math.cos(camPitch);
+  // Smooth follow
+  cam.position.x+=(tx-cam.position.x)*.12;
+  cam.position.y+=(ty-cam.position.y)*.12;
+  cam.position.z+=(tz-cam.position.z)*.12;
+  cam.lookAt(PL.pos.x,PL.pos.y+.5,PL.pos.z);
+}
+
+// ─── PLATFORM ANIMATION ───────────────────────────────────────────────────────
+function animatePlatforms(t,dt){
+  for(const p of platforms){
+    p.lx=p.mesh.position.x;
+    p.lz=p.mesh.position.z;
+    if(p.moveAxis){
+      p.movePhase+=p.moveSpeed*dt;
+      const off=Math.sin(p.movePhase)*p.moveRange;
+      if(p.moveAxis==='x')p.mesh.position.set(p.bx+off,p.by,p.bz);
+      else if(p.moveAxis==='y')p.mesh.position.set(p.bx,p.by+Math.abs(off),p.bz);
+      else if(p.moveAxis==='z')p.mesh.position.set(p.bx,p.by,p.bz+off);
+    }
+    if(p.rotAxis){
+      if(p.rotAxis==='y')p.mesh.rotation.y+=p.rotSpeed*dt;
+      if(p.rotAxis==='x')p.mesh.rotation.x+=p.rotSpeed*dt;
+    }
+  }
+  // Animate checkpoint rings
+  for(const cp of checkpoints){
+    cp.ring.rotation.z+=dt;
+    cp.ring.position.y=cp.y+2.2+Math.sin(t*2)*.1;
+  }
+}
+
+// ─── LIGHTS FOLLOW PLAYER ─────────────────────────────────────────────────────
+function animateLights(t){
+  pl1.position.set(PL.pos.x+Math.sin(t)*6,PL.pos.y+4,PL.pos.z+Math.cos(t)*6);
+  pl2.position.set(PL.pos.x+Math.cos(t*.7)*6,PL.pos.y+6,PL.pos.z+Math.sin(t*.7)*6);
+  playerMesh.material.emissiveIntensity=.5+Math.sin(t*5)*.1;
+}
+
+// ─── MENU / WIN / GAME OVER ───────────────────────────────────────────────────
+function showOverlay(title,titleColor,sub,btnTxt,btnColor){
+  const ov=document.getElementById('overlay');
+  ov.style.display='flex';
+  ov.querySelector('.ov-title').textContent=title;
+  ov.querySelector('.ov-title').style.color=titleColor;
+  ov.querySelector('.ov-sub').textContent=sub;
+  const btn=ov.querySelector('.play-btn');
+  btn.textContent=btnTxt;
+  btn.style.color=btnColor;
+  GS.status='menu';
+}
+
+function showGameOver(){
+  setTimeout(()=>showOverlay('GAME OVER','#ff2244','You ran out of lives — try again!','RETRY','#ff2244'),500);
+}
+
+function triggerWin(){
+  if(GS.status!=='playing')return;
+  GS.status='won';
+  flashScreen('rgba(255,0,255,0.4)',600);
+  setTimeout(()=>{
+    showOverlay('YOU WIN!','#ffff00','🎉 Congratulations! You completed all 8 stages!','PLAY AGAIN','#ffff00');
+  },800);
+}
+
+function resetGame(){
+  GS.lives=3;
+  GS.checkpointIdx=0;
+  GS.spawnPos={x:0,y:2,z:0};
+  dying=false;
+  for(const cp of checkpoints){
+    cp.active=false;
+    cp.ring.material.emissive.set(0x00ff88);
+    cp.ring.material.color.set(0x00ff88);
+    cp.rl.color.set(0x00ff88);
+  }
+  PL.pos={x:0,y:2,z:0};
+  PL.vel={x:0,y:0,z:0};
+  PL.onGround=false;
+  PL.invincible=0;
+  PL.currentPlatform=null;
+  cam.position.set(0,8,13);
+  updateHUD();
+  setCheckpointTxt('START');
+  setStageBar('NEON OBBY');
+  GS.status='playing';
+}
+
+document.getElementById('startBtn').addEventListener('click',()=>{
+  document.getElementById('overlay').style.display='none';
+  resetGame();
+});
+
+// ─── MAIN LOOP ────────────────────────────────────────────────────────────────
+let lt=0,t=0;
+function loop(ts){
+  requestAnimationFrame(loop);
+  const dt=Math.min((ts-lt)/1000,.05);lt=ts;t+=dt;
+  animatePlatforms(t,dt);
+  physicsUpdate(dt);
+  camUpdate();
+  animateLights(t);
+  renderer.render(scene,cam);
+}
+
+cam.position.set(0,8,13);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
