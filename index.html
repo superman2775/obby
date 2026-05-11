@@ -72,7 +72,7 @@ canvas{display:block;width:100vw;height:100vh}
 <canvas id="c"></canvas>
 <div id="ui">
   <div id="hud">
-    <div id="lives">♥ ♥ ♥</div>
+    <div id="lives">♥ ♥ ♥ ♥ ♥ ♥ ♥ ♥ ♥ ♥</div>
     <div id="checkpoint-txt">START</div>
   </div>
   <div id="stage-bar">NEON OBBY</div>
@@ -463,7 +463,7 @@ canvas.addEventListener('touchend',()=>touchCam=false,{passive:true});
 // ─── GAME STATE ──────────────────────────────────────────────────────────────
 const GS={
   status:'menu',
-  lives:3,
+  lives:10,
   checkpointIdx:0,
   spawnPos:{x:0,y:2,z:0},
 };
